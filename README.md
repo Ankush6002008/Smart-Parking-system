@@ -5,10 +5,10 @@ As the servo moves, the ultrasonic sensor checks the distance to nearby objects 
 
 This rotational scanning approach:
 
-Maximizes coverage with just one sensor
+1.Maximizes coverage with just one sensor
 
-Minimizes cost and hardware complexity
+2.Minimizes cost and hardware complexity
 
-Provides real-time parking availability updates
+3.Provides real-time parking availability updates
 
 The system can be integrated with a cloud dashboard or app to guide drivers to available spaces, reducing congestion and wait times.
