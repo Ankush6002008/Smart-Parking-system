@@ -1,0 +1,29 @@
+Smart Parking System - Resources
+
+This system uses an ultrasonic sensor mounted on a servo motor to detect the availability of a parking spot and its adjacent spots. The ESP32 microcontroller gathers distance data and sends it to Ubidots while also hosting a web-based radar interface.
+
+🧰 Hardware Components:
+1. ESP32 Development Board
+2. HC-SR04 Ultrasonic Distance Sensor
+3. Servo Motor (SG90 or similar)
+4. Breadboard
+5. Jumper Wires
+
+💻 Software Resources:
+- Arduino framework for ESP32
+- Libraries used:
+  - WiFi.h
+  - HTTPClient.h
+  - ESP32Servo.h
+  - WebServer.h
+
+🌐 Cloud Platform:
+- Ubidots (for real-time data monitoring)
+
+🧠 Features:
+- Servo rotates the ultrasonic sensor to scan surroundings.
+- Web dashboard shows live radar-like visualization.
+- Distance data is uploaded to Ubidots every 3 seconds.
+
+📂 Source Code:
+The full source code is included in the file `esp_code.txt`.
