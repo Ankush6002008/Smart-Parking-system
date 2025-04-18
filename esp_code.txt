@@ -1,0 +1,178 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ESP32Servo.h>
+#include <WebServer.h>
+
+// Pin Definitions
+#define TRIG_PIN 12
+#define ECHO_PIN 13
+#define SERVO_PIN 14
+
+// WiFi Credentials
+const char* ssid = "***";
+const char* password = "opop****";
+
+// Ubidots Info
+const char* UBIDOTS_TOKEN = "BBUS-yVPoxB3XmlWqFBLzBCKJwgvykcE***";
+const char* DEVICE_LABEL = "ESP32-Ultrasonic";
+const char* VARIABLE_LABEL = "distance";
+
+// Globals
+Servo myServo;
+int angle = 0;
+int direction = 1;
+float currentDistance = 0;
+WebServer server(80);
+
+// Timing
+unsigned long lastServoMove = 0;
+unsigned long lastSend = 0;
+unsigned long lastDistanceCheck = 0;
+
+// Function to get distance in cm
+float getDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duration = pulseIn(ECHO_PIN, HIGH);
+  float distance = duration * 0.034 / 2;
+  return (distance > 400) ? 400 : distance;
+}
+
+// Send to Ubidots
+void sendToUbidots(float distance) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    String url = "http://industrial.api.ubidots.com/api/v1.6/devices/" + String(DEVICE_LABEL);
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("X-Auth-Token", UBIDOTS_TOKEN);
+
+    String payload = "{\"" + String(VARIABLE_LABEL) + "\":" + String(distance) + "}";
+    int responseCode = http.POST(payload);
+
+    Serial.print("Sent to Ubidots | Distance: ");
+    Serial.print(distance);
+    Serial.print(" cm | Response: ");
+    Serial.println(responseCode);
+
+    http.end();
+  } else {
+    Serial.println("WiFi not connected. Cannot send to Ubidots.");
+  }
+}
+
+// Web page handler
+void handleRoot() {
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ESP32 Radar</title>
+  <style>
+    body { background-color: #121212; color: #eee; font-family: Arial; text-align: center; }
+    h2 { color: #00FF00; }
+    #radar { margin: auto; width: 400px; height: 400px; background: radial-gradient(#0f0 1px, transparent 1px), radial-gradient(#0f0 1px, #121212 1px); background-size: 40px 40px; border-radius: 50%; position: relative; overflow: hidden; }
+    #sweep { width: 400px; height: 400px; position: absolute; top: 0; left: 0; border-radius: 50%; background: conic-gradient(rgba(0,255,0,0.2) 0deg, transparent 60deg); animation: spin 2s linear infinite; }
+    canvas { background-color: #1f1f1f; display: block; margin: auto; border: 1px solid #333; border-radius: 10px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <h2>📏 Distance: <span id="dist">--</span> cm</h2>
+  <h2>🧭 Servo Angle: <span id="angle">--</span>°</h2>
+  <div id="radar"><div id="sweep"></div></div>
+  <canvas id="chart" width="400" height="200"></canvas>
+  <script>
+    const distSpan = document.getElementById("dist");
+    const angleSpan = document.getElementById("angle");
+    const ctx = document.getElementById("chart").getContext("2d");
+    let data = { labels: [], datasets: [{ label: 'Distance (cm)', data: [], borderColor: '#00FF00', fill: false }] };
+    let chart = new Chart(ctx, { type: 'line', data: data, options: { scales: { y: { min: 0, max: 400 } } } });
+
+    async function fetchData() {
+      const res = await fetch("/data");
+      const json = await res.json();
+      distSpan.innerText = json.distance;
+      angleSpan.innerText = json.angle;
+      let time = new Date().toLocaleTimeString();
+      data.labels.push(time);
+      data.datasets[0].data.push(json.distance);
+      if (data.labels.length > 20) {
+        data.labels.shift();
+        data.datasets[0].data.shift();
+      }
+      chart.update();
+    }
+    setInterval(fetchData, 1000);
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</body>
+</html>
+)rawliteral";
+
+  server.send(200, "text/html", html);
+}
+
+// API endpoint for distance and angle
+void handleData() {
+  String json = "{\"distance\":" + String(currentDistance) + ",\"angle\":" + String(angle) + "}";
+  server.send(200, "application/json", json);
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  myServo.attach(SERVO_PIN);
+  myServo.write(angle);
+
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\n✅ WiFi connected!");
+  Serial.print("📶 IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  server.on("/", handleRoot);
+  server.on("/data", handleData);
+  server.begin();
+  Serial.println("🌐 Web server started!");
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  // Fast and smooth servo movement
+  if (now - lastServoMove > 10) {
+    angle += direction * 2;
+    if (angle >= 180 || angle <= 0) direction *= -1;
+    myServo.write(angle);
+    lastServoMove = now;
+  }
+
+  // Get new distance every 200ms
+  if (now - lastDistanceCheck > 200) {
+    currentDistance = getDistance();
+    Serial.print("📏 Distance: ");
+    Serial.print(currentDistance);
+    Serial.println(" cm");
+    lastDistanceCheck = now;
+  }
+
+  // Send to Ubidots every 3s
+  if (now - lastSend >= 3000) {
+    sendToUbidots(currentDistance);
+    lastSend = now;
+  }
+
+  server.handleClient();
+}
